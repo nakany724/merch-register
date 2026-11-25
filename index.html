@@ -438,7 +438,7 @@ function cartSum(ar){
   const ls=UI.cart.map((c,i)=>{const x=m[c.s];const price=x?x.p.price:0;return{...c,i,x,price,line:c.g?0:price*c.q}});
   const sub=ls.reduce((a,l)=>a+l.line,0);const disc=Math.min(UI.disc||0,sub);
   const cp=UI.coupon&&findCoupon(ar,UI.coupon.id);let cd=0;
-  if(cp){const base=sub-disc;cd=cp.type==='pct'?Math.floor(base*Math.min(100,cp.value||0)/100):Math.min(cp.value||0,base)}
+  if(cp&&cp.type!=='gift'){const base=sub-disc;cd=cp.type==='pct'?Math.floor(base*Math.min(100,cp.value||0)/100):Math.min(cp.value||0,base)}
   return{ls,sub,disc,cp,cd,total:sub-disc-cd,count:ls.reduce((a,l)=>a+l.q,0)};
 }
 function addToCart(s){
@@ -658,7 +658,7 @@ function tReg(a,e){
   const et=TX(UI.editTx);
   return `<div class="row" style="justify-content:space-between;align-items:flex-end;margin:6px 0 16px">
       <div><div class="eyebrow">${et?'修正中のお客さま':'お客さま'}</div><div class="num" style="font-weight:900;font-size:44px;line-height:1">${et?noLabel(et):nextLabel(e.id)}</div>${isTeam(e)?`<button class="link" style="font-size:12px" data-act="regOpen">レジ名 ${esc(myReg(e.id)||'未設定')}</button>`:''}</div>
-      <div style="text-align:right"><div>${syncHTML()}</div><div class="small">売上 ${yen(st.total)} ・ ${st.customers}人</div></div>
+      <div style="text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:6px"><div>${syncHTML()}</div><div class="small">売上 ${yen(st.total)} ・ ${st.customers}人</div>${(a.coupons||[]).some(c=>!c.off)?qrBtn('reg','クーポンQR','btn y sm'):''}</div>
     </div>
     ${et?`<div class="edit-bar"><span>${noLabel(et)} の内容を直しています（番号はそのまま）</span><button class="link" data-act="cancelEdit">やめる</button></div>`:''}
     ${ps.length?`<div class="tiles">${tiles}</div>`:`<div class="empty"><b>商品がありません</b><button class="btn sm" data-act="toProducts">商品を登録する</button></div>`}
@@ -718,7 +718,7 @@ function tSum(a,e){
   const sumPay=st.cash+st.card+st.other;
   return `<div style="margin:6px 0 4px" class="eyebrow">売上合計</div>
   <div class="num" style="font-weight:900;font-size:52px;line-height:1.05"><span class="mk">${yen(st.total)}</span></div>
-  ${st.disc||st.refund||st.cpN?`<div class="small" style="margin-top:4px">${[st.disc?`値引き ${yen(st.disc)}`:'',st.cpN?`クーポン ${yen(st.cpAmt)}（${st.cpN}件）`:'',st.refund?`返金 ${yen(st.refund)}（${st.refundN}件）`:''].filter(Boolean).join('・')} を引いた金額</div>`:''}
+  ${st.disc||st.refund||st.cpAmt?`<div class="small" style="margin-top:4px">${[st.disc?`値引き ${yen(st.disc)}`:'',st.cpAmt?`クーポン ${yen(st.cpAmt)}（${st.cpN}件）`:'',st.refund?`返金 ${yen(st.refund)}（${st.refundN}件）`:''].filter(Boolean).join('・')} を引いた金額</div>`:''}
   <div class="stats" style="margin-top:18px">
     <div><span>お客さま</span><b>${st.customers}人</b></div><div><span>販売点数</span><b>${st.items}点</b></div>
     <div><span>客単価</span><b>${yen(avg)}</b></div><div><span>プレゼント</span><b>${st.giftN}点</b></div>
@@ -737,6 +737,7 @@ function tSum(a,e){
     ${e.countDen&&denText(e.countDen)?`<p class="hint" style="margin-top:6px">内訳：${denText(e.countDen)}</p>`:''}
     <div id="cashDiff" style="margin-top:10px">${cashDiffHTML(e,st)}</div>
   </div>
+  ${couponStatsHTML(e)}
   <div class="sec"><div class="sec-h"><h2>商品別</h2></div>
     <div class="tbl"><table class="t"><thead><tr><th>商品</th><th>販売</th><th>プレゼント</th><th>残り</th><th>売上</th></tr></thead><tbody>
     ${list.map(x=>`<tr><td style="font-weight:700;font-size:13px;line-height:1.4">${esc(x.label)}</td><td>${st.sold[x.s]||0}</td><td>${st.gift[x.s]||0}</td><td>${st.tracked(x.s)?st.remain(x.s):'—'}</td><td>${yen(st.rev[x.s]||0)}</td></tr>`).join('')}
@@ -747,6 +748,9 @@ function tSum(a,e){
     <button class="btn out" data-act="copyCSV">会計履歴をCSVでコピー</button>
   </div>`;
 }
+function couponStats(e){const m={};for(const t of txOf(e.id)){if(t.v||!t.cp||fullyRefunded(t))continue;const k=t.cp.name;const o=m[k]=m[k]||{n:0,amt:0,gift:0};o.n++;o.amt+=t.cp.amt||0;t.items.forEach(i=>{if(i.c)o.gift+=i.q})}return m}
+function couponStatsHTML(e){const m=couponStats(e);const ks=Object.keys(m);if(!ks.length)return '';
+  return `<div class="sec"><div class="sec-h"><h2>クーポン別</h2></div><div class="tbl"><table class="t"><thead><tr><th>クーポン</th><th>使用</th><th>割引</th><th>プレゼント</th></tr></thead><tbody>${ks.map(k=>`<tr><td style="font-weight:700;font-size:13px">${esc(k)}</td><td>${m[k].n}回</td><td>${yen(m[k].amt)}</td><td>${m[k].gift}個</td></tr>`).join('')}</tbody></table></div></div>`}
 function cashDiffHTML(e,st){
   if(e.cashCount==null)return '<p class="hint">締めのときに数えた金額を入れると、差額を出します。</p>';
   const d=e.cashCount-((e.float||0)+st.cash);
@@ -829,6 +833,7 @@ const SHEETS={
       ${s.pid?(s.confirmDel?`<p class="red">過去の会計記録の商品名は残ります。</p><button class="btn danger" data-act="delProduct">本当に削除する</button>`:`<button class="btn out" style="color:var(--alert);box-shadow:inset 0 0 0 2px var(--alert)" data-act="askDel">この商品を削除</button>`):''}
     </div>`},
   variant(s){const a=AR(UI.aid),e=EV(UI.eid);const p=(a.products||[]).find(x=>x.id===s.pid);if(!p)return '';const st=calc(e);
+    if(s.gift)return shHead(`${esc(p.name)} をプレゼント`,`クーポン「${esc(s.gift.name)}」・ 渡す種類を選んでください（${s.gift.q}個）`)+`<div class="vargrid">${p.vars.map(v=>{const sk=p.id+'~'+v.id;const r=st.remain(sk)-cartQty(sk);return `<div class="varcell"><button class="varbtn" data-act="addVar" data-s="${esc(sk)}" ${st.tracked(sk)&&r<s.gift.q?'disabled':''}><b>${esc(v.name)}</b><span>${st.tracked(sk)?(r<=0?'SOLD OUT':'残'+r):''}</span></button></div>`}).join('')}</div><div style="margin-top:18px"><button class="btn out" data-act="closeSheet">やめる</button></div>`;
     return shHead(esc(p.name),`<span class="num">${yen(p.price)}</span> ・ 種類をタップするとカートに入ります。「−」で減らせます`)+`
     <div class="vargrid">${p.vars.map(v=>{const sk=p.id+'~'+v.id;const tr=st.tracked(sk);const r=st.remain(sk)-cartQty(sk);const inc=cartQty(sk);
       return `<div class="varcell"><button class="varbtn" data-act="addVar" data-s="${esc(sk)}" ${tr&&r<=0?'disabled':''}><b>${esc(v.name)}</b><span>${tr?(r<=0?'SOLD OUT':r<=3?`<span class="pill-low">残${r}</span>`:`残${r}`):'在庫数えない'}</span>${inc?`<span class="mk">カート ${inc}</span>`:''}</button>${inc?`<button class="varminus" data-act="varMinus" data-s="${esc(sk)}" aria-label="${esc(v.name)}を1つ減らす">− 1つ減らす</button>`:''}</div>`}).join('')}</div>
@@ -841,16 +846,15 @@ const SHEETS={
     <div class="list">${c.ls.map(l=>`<div class="li" style="flex-wrap:wrap">
       <div class="thumb s">${phHTML(l.x&&l.x.p)}</div>
       <div class="grow"><div style="font-weight:700;font-size:14px;line-height:1.4">${esc(l.x?l.x.p.name:'(削除された商品)')}${l.x&&l.x.v?` <span class="mk">${esc(l.x.v.name)}</span>`:''}</div>
-      <div class="small num">${l.g?'プレゼント（0円）':yen(l.price)+' × '+l.q+' = '+yen(l.line)}</div></div>
+      <div class="small num">${l.c?'<span class="mk">クーポンでプレゼント（0円）</span>':l.g?'プレゼント（0円）':yen(l.price)+' × '+l.q+' = '+yen(l.line)}</div></div>
       <div class="row" style="gap:8px;flex-basis:100%;justify-content:flex-end">
         <button class="giftbtn ${l.g?'on':''}" data-act="lineGift" data-i="${l.i}">プレゼント</button>
         <div class="qty"><button data-act="lineQty" data-i="${l.i}" data-d="-1" aria-label="減らす">−</button><span>${l.q}</span><button data-act="lineQty" data-i="${l.i}" data-d="1" aria-label="増やす">＋</button></div>
       </div></div>`).join('')}</div>
-    ${giftOnly?`<p class="small" style="margin:16px 0">すべてプレゼントです。お金のやりとりなしで記録します。</p>`:`
+    ${giftOnly?`${cpRowHTML(c)}<p class="small" style="margin:16px 0">すべてプレゼントです。お金のやりとりなしで記録します。</p>`:`
     <div class="kv"><span>小計</span><span class="num" id="c-sub" style="font-weight:800">${yen(c.sub)}</span></div>
     <div class="row" style="justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line)"><label for="f-disc">値引き（円）</label><input class="uin mid" style="width:140px;text-align:right;font-size:22px" id="f-disc" inputmode="numeric" pattern="[0-9]*" placeholder="0" data-bind="disc" value="${UI.disc||''}"></div>
-    ${c.cp?`<div class="cpn-on" style="margin-top:10px"><div class="grow">クーポン「${esc(c.cp.name)}」<div class="small" style="color:var(--ink)">${cpLabel(c.cp)} ・ ${esc(UI.coupon.code)}</div></div><b class="num" id="c-cd">−${yen(c.cd)}</b><button class="x" data-act="cpRemove" aria-label="クーポンを外す">${IC.close}</button></div>`
-      :((AR(UI.aid).coupons||[]).length?`<div class="cpn"><span class="grow">クーポン</span>${LIVE_CAM?'<button class="btn sm" data-act="scan" data-t="cart">QRを読む</button>':'<label class="btn sm" for="f-qr" style="cursor:pointer">QRを読む</label>'}<button class="btn out sm" data-act="cpType">コード入力</button><input type="file" id="f-qr" accept="image/*" capture="environment" data-qr="cart" hidden></div>`:'')}
+    ${cpRowHTML(c)}
     <div class="total"><span style="font-weight:900">合計</span><b id="c-total">${yen(c.total)}</b></div>
     <div class="seg" role="radiogroup" aria-label="支払い方法">${['cash','card','other'].map(k=>`<button class="${UI.pay===k?'on':''}" role="radio" aria-checked="${UI.pay===k}" data-act="pay" data-k="${k}">${PAY[k]}</button>`).join('')}</div>
     ${UI.pay==='cash'?`<div style="margin-top:18px">
@@ -870,13 +874,18 @@ const SHEETS={
       <button class="btn" data-act="notesOk">説明した・渡した → 会計へ</button>
       <button class="btn out" data-act="closeSheet">まだ。戻る</button>
     </div>`},
-  coupon(s){return shHead(s.id?'クーポンを編集':'クーポンを追加')+`
+  coupon(s){const a=AR(UI.aid);const ps=a.products||[];const gp=ps.find(p=>p.id===s.pid);const gift=s.dtype==='gift';
+    return shHead(s.id?'クーポンを編集':'クーポンを追加')+`
     <div class="stack" style="gap:20px">
-      <div class="field"><label for="f-cn">クーポンの名前</label><input class="uin txt" id="f-cn" data-bind="sf" data-k="name" value="${esc(s.name||'')}" placeholder="例：FC会員割" autocomplete="off"></div>
-      <div><div class="small" style="margin-bottom:6px">割引のしかた</div><div class="seg" style="grid-template-columns:1fr 1fr">${[['yen','円引き'],['pct','％引き']].map(k=>`<button class="${s.dtype===k[0]?'on':''}" data-act="cpSetType" data-k="${k[0]}">${k[1]}</button>`).join('')}</div></div>
-      <div class="field"><label for="f-cv">${s.dtype==='pct'?'何％引き':'何円引き'}</label><input class="uin" id="f-cv" inputmode="numeric" pattern="[0-9]*" data-bind="sf" data-k="value" value="${esc(s.value??'')}" placeholder="${s.dtype==='pct'?'10':'500'}"></div>
+      <div class="field"><label for="f-cn">クーポンの名前</label><input class="uin txt" id="f-cn" data-bind="sf" data-k="name" value="${esc(s.name||'')}" placeholder="${gift?'例：会場限定ステッカープレゼント':'例：FC会員割'}" autocomplete="off"></div>
+      <div><div class="small" style="margin-bottom:6px">クーポンの種類</div><div class="seg">${[['yen','円引き'],['pct','％引き'],['gift','プレゼント']].map(k=>`<button class="${s.dtype===k[0]?'on':''}" data-act="cpSetType" data-k="${k[0]}">${k[1]}</button>`).join('')}</div></div>
+      ${gift?`<div><div class="small" style="margin-bottom:6px">プレゼントする商品</div>
+        ${ps.length?`<div class="list">${ps.map(p=>`<button class="li" data-act="cpPick" data-id="${p.id}" ${s.pid===p.id?'style="background:var(--mark)"':''}><div class="thumb s">${phHTML(p)}</div><div class="grow" style="font-weight:700;padding-left:4px">${esc(p.name)}</div>${s.pid===p.id?'<span class="chip on">選択中</span>':''}</button>`).join('')}</div>`:'<p class="red">先に商品を登録してください。</p>'}</div>
+        ${gp&&gp.vars&&gp.vars.length?`<div><div class="small" style="margin-bottom:6px">種類</div><div class="row wrap" style="gap:8px"><button class="chip ${!s.vid?'on':''}" data-act="cpVar" data-v="">その場で選ぶ</button>${gp.vars.map(v=>`<button class="chip ${s.vid===v.id?'on':''}" data-act="cpVar" data-v="${v.id}">${esc(v.name)}</button>`).join('')}</div></div>`:''}
+        <div class="row" style="justify-content:space-between"><span style="font-weight:700">1回でプレゼントする数</span><div class="qty"><button data-act="cpQty" data-d="-1" aria-label="減らす">−</button><span>${s.qty||1}</span><button data-act="cpQty" data-d="1" aria-label="増やす">＋</button></div></div>`
+      :`<div class="field"><label for="f-cv">${s.dtype==='pct'?'何％引き':'何円引き'}</label><input class="uin" id="f-cv" inputmode="numeric" pattern="[0-9]*" data-bind="sf" data-k="value" value="${esc(s.value??'')}" placeholder="${s.dtype==='pct'?'10':'500'}"></div>`}
       <div class="field"><label for="f-cc">コード（QRコードの中身）。1行に1つ</label><textarea class="uin" id="f-cc" data-bind="sf" data-k="codes" rows="4" placeholder="例：FC-2026">${esc(s.codes||'')}</textarea>
-        <div class="row wrap" style="gap:8px;margin-top:8px"><button class="btn out sm" data-act="cpGen" data-n="1">コードを1つ作る</button><button class="btn out sm" data-act="cpGen" data-n="10">10個作る</button>${LIVE_CAM?'<button class="btn out sm" data-act="scan" data-t="edit">手持ちのQRを読んで追加</button>':'<label class="btn out sm" for="f-qr2" style="cursor:pointer">手持ちのQRを読んで追加</label>'}<input type="file" id="f-qr2" accept="image/*" capture="environment" data-qr="edit" hidden></div>
+        <div class="row wrap" style="gap:8px;margin-top:8px"><button class="btn out sm" data-act="cpGen" data-n="1">コードを1つ作る</button><button class="btn out sm" data-act="cpGen" data-n="10">10個作る</button>${qrBtn('edit','手持ちのQRを読んで追加','btn out sm')}</div>
         <span class="hint">みんなで同じQRを使うなら1つ、1人ずつ別のQRを配るなら人数分のコードを入れます。</span></div>
       <button class="switch" data-act="cpToggle" data-k="once"><div><div style="font-weight:700">1つのコードは1回だけ使える</div><div class="hint">使ったコードは、次から「使用済み」と出ます</div></div><span class="tg ${s.once?'on':''}"></span></button>
       <button class="switch" data-act="cpToggle" data-k="off"><div><div style="font-weight:700">一時的に使えなくする</div></div><span class="tg ${s.off?'on':''}"></span></button>
@@ -1023,9 +1032,26 @@ function applyCoupon(raw){
   if(!cp){toast('このコードはクーポンとして登録されていません');buzz(120);return false}
   if(cp.off){toast(`「${cp.name}」は今は使えない設定です`);buzz(120);return false}
   if(cp.once){const u=couponUse(a.id,code);if(u){toast(`このコードは使用済みです（${fmtDate(u.e.date)} ${noLabel(u.t)}）`);buzz(120);return false}}
+  if(UI.coupon)removeCouponLines();
+  if(cp.type==='gift'){
+    const p=(a.products||[]).find(x=>x.id===cp.pid);if(!p){toast('プレゼントする商品が見つかりません。クーポンの設定を確認してください');return false}
+    const q=Math.max(1,cp.qty||1);
+    if(p.vars&&p.vars.length&&!cp.vid){openSheet({type:'variant',pid:p.id,gift:{id:cp.id,code,q,name:cp.name}});return false}
+    if(!addGiftLine(cp.vid?p.id+'~'+cp.vid:p.id,q))return false;
+  }
   UI.coupon={id:cp.id,code};buzz(30);saveLocal();toast(`クーポン「${cp.name}」を使いました`);return true;
 }
-const cpLabel=cp=>cp.type==='pct'?cp.value+'%引き':yen(cp.value)+'引き';
+function addGiftLine(sk,q){const st=calc(EV(UI.eid));if(st.remain(sk)-cartQty(sk)<q){toast('プレゼントする商品の在庫が足りません');buzz(120);return false}UI.cart.push({s:sk,q,g:1,c:1});return true}
+function removeCouponLines(){UI.cart=UI.cart.filter(l=>!l.c);UI.coupon=null}
+function qrBtn(t,label,cls){
+  if(typeof LIVE_CAM!=='undefined'&&LIVE_CAM&&typeof openScanner==='function')return `<button class="${cls}" data-act="scan" data-t="${t}">${label}</button>`;
+  return `<label class="${cls}" for="qf-${t}" style="cursor:pointer">${label}</label><input type="file" id="qf-${t}" accept="image/*" capture="environment" data-qr="${t}" hidden>`;
+}
+function cpRowHTML(c){
+  if(c.cp)return `<div class="cpn-on" style="margin-top:10px"><div class="grow">クーポン「${esc(c.cp.name)}」<div class="small" style="color:var(--ink)">${cpLabel(c.cp)} ・ ${esc(UI.coupon.code)}</div></div>${c.cp.type==='gift'?'':`<b class="num" id="c-cd">−${yen(c.cd)}</b>`}<button class="x" data-act="cpRemove" aria-label="クーポンを外す">${IC.close}</button></div>`;
+  return (AR(UI.aid).coupons||[]).length?`<div class="cpn"><span class="grow">クーポン</span>${qrBtn('cart','QRを読む','btn sm')}<button class="btn out sm" data-act="cpType">コード入力</button></div>`:'';
+}
+const cpLabel=cp=>{if(cp.type==='gift'){const a=AR(UI.aid);const p=a&&(a.products||[]).find(x=>x.id===cp.pid);const v=p&&cp.vid&&(p.vars||[]).find(x=>x.id===cp.vid);return (p?p.name:'商品')+(v?'（'+v.name+'）':'')+'×'+(cp.qty||1)+'をプレゼント'}return cp.type==='pct'?cp.value+'%引き':yen(cp.value)+'引き'};
 function qrImg(text){try{const q=qrcode(0,'M');q.addData(text);q.make();return q.createDataURL(6,2)}catch(e){return ''}}
 function randCode(){const ch='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';let s='';const r=crypto.getRandomValues(new Uint8Array(8));for(const x of r)s+=ch[x%ch.length];return 'CP-'+s}
 async function decodeQR(file){
@@ -1039,7 +1065,8 @@ async function decodeQR(file){
   return null;
 }
 function handleCode(code,target){
-  if(target==='cart'){if(applyCoupon(code))renderLayer()}
+  if(target==='cart'){if(applyCoupon(code))render()}
+  else if(target==='reg'){if(applyCoupon(code)){render();openSheet({type:'cart'})}}
   else if(target==='edit'&&UI.sheet&&UI.sheet.type==='coupon'){const cur=String(UI.sheet.codes||'').split(/\n+/).map(x=>x.trim()).filter(Boolean);if(!cur.includes(code))cur.push(code);UI.sheet.codes=cur.join('\n');renderLayer();toast('コードを追加しました')}
 }
 let SCAN=null;
@@ -1158,29 +1185,32 @@ const ACT={
   tapProduct(d){const p=AR(UI.aid).products.find(x=>x.id===d.id);if(!p)return;
     if(p.vars&&p.vars.length){openSheet({type:'variant',pid:p.id});return}
     if(addToCart(p.id))render()},
-  addVar(d){if(addToCart(d.s)){closeSheet();render()}},
+  addVar(d){const gs=UI.sheet&&UI.sheet.gift;if(gs){if(addGiftLine(d.s,gs.q)){UI.coupon={id:gs.id,code:gs.code};saveLocal();toast(`クーポン「${gs.name}」を使いました`);render();openSheet({type:'cart'})}return}if(addToCart(d.s)){closeSheet();render()}},
   undo(){const s=UI.hist.pop();if(!s){const l=UI.cart[UI.cart.length-1];if(l){l.q--;if(l.q<=0)UI.cart.pop()}}
     else{const l=[...UI.cart].reverse().find(c=>c.s===s);if(l){l.q--;if(l.q<=0)UI.cart.splice(UI.cart.indexOf(l),1)}}
     saveLocal();render()},
-  newCoupon(){openSheet({type:'coupon',name:'',dtype:'yen',value:'',codes:'',once:false,off:false})},
-  editCoupon(d){const c=findCoupon(AR(UI.aid),d.id);if(!c)return;openSheet({type:'coupon',id:c.id,name:c.name,dtype:c.type,value:String(c.value),codes:(c.codes||[]).join('\n'),once:!!c.once,off:!!c.off})},
+  newCoupon(){openSheet({type:'coupon',qty:1,pid:'',vid:'',name:'',dtype:'yen',value:'',codes:'',once:false,off:false})},
+  editCoupon(d){const c=findCoupon(AR(UI.aid),d.id);if(!c)return;openSheet({type:'coupon',qty:c.qty||1,pid:c.pid||'',vid:c.vid||'',id:c.id,name:c.name,dtype:c.type,value:String(c.value),codes:(c.codes||[]).join('\n'),once:!!c.once,off:!!c.off})},
   cpSetType(d){UI.sheet.dtype=d.k;renderLayer()},
   cpToggle(d){UI.sheet[d.k]=!UI.sheet[d.k];renderLayer()},
   cpGen(d){const s=UI.sheet;const cur=String(s.codes||'').split(/\n+/).map(x=>x.trim()).filter(Boolean);for(let i=0;i<Number(d.n);i++)cur.push(randCode());s.codes=cur.join('\n');renderLayer()},
   saveCoupon(){const a=AR(UI.aid);const s=UI.sheet;const name=String(s.name||'').trim();const value=digits(s.value);
     const codes=[...new Set(String(s.codes||'').split(/\n+/).map(x=>x.trim()).filter(Boolean))];
-    if(!name){toast('クーポンの名前を入れてください');return}if(!value){toast('割引の数を入れてください');return}
+    if(!name){toast('クーポンの名前を入れてください');return}if(s.dtype==='gift'){if(!s.pid){toast('プレゼントする商品を選んでください');return}}else if(!value){toast('割引の数を入れてください');return}
     if(s.dtype==='pct'&&value>100){toast('％は100までです');return}if(!codes.length){toast('コードを1つ以上入れてください');return}
     const dup=(a.coupons||[]).find(c=>c.id!==s.id&&(c.codes||[]).some(x=>codes.includes(x)));if(dup){toast(`「${dup.name}」と同じコードがあります`);return}
     a.coupons=a.coupons||[];let c=s.id&&findCoupon(a,s.id);
     if(!c){c={id:nid()};a.coupons.push(c)}
-    Object.assign(c,{name,type:s.dtype,value,codes,once:!!s.once,off:!!s.off});
+    Object.assign(c,{pid:s.dtype==='gift'?s.pid:'',vid:s.dtype==='gift'?(s.vid||''):'',qty:s.dtype==='gift'?(s.qty||1):0,name,type:s.dtype,value:s.dtype==='gift'?0:value,codes,once:!!s.once,off:!!s.off});
     closeSheet();commit('a_'+a.id);toast('クーポンを保存しました')},
   delCoupon(){const a=AR(UI.aid);a.coupons=(a.coupons||[]).filter(c=>c.id!==UI.sheet.id);closeSheet();commit('a_'+a.id)},
   cpQR(){const id=UI.sheet.id;openSheet({type:'qr',id})},
   cpType(){openSheet({type:'cpType',code:''})},
-  cpTypeDo(){if(applyCoupon(UI.sheet.code))openSheet({type:'cart'})},
-  cpRemove(){UI.coupon=null;saveLocal();renderLayer()},
+  cpTypeDo(){if(applyCoupon(UI.sheet.code)){render();openSheet({type:'cart'})}},
+  cpRemove(){removeCouponLines();saveLocal();render()},
+  cpPick(d){UI.sheet.pid=d.id;UI.sheet.vid='';renderLayer()},
+  cpVar(d){UI.sheet.vid=d.v;renderLayer()},
+  cpQty(d){UI.sheet.qty=Math.max(1,(UI.sheet.qty||1)+Number(d.d));renderLayer()},
   openCart(){const a=AR(UI.aid);if(!UI.editTx&&cartNotes(a,true).length){openSheet({type:'notes'});return}openSheet({type:'cart'})},
   notesOk(){const a=AR(UI.aid);UI.noteAck=[...new Set([...(UI.noteAck||[]),...cartNotes(a,false).map(n=>n.p.id)])];openSheet({type:'cart'})},
   lineQty(d){const l=UI.cart[+d.i];if(!l)return;const dd=+d.d;
@@ -1204,11 +1234,11 @@ const ACT={
     const giftOnly=c.total===0&&c.ls.every(l=>l.g);
     const pay=giftOnly?'none':UI.pay;
     const old=TX(UI.editTx);
-    if(old){Object.assign(old,{items:c.ls.map(l=>({s:l.s,n:l.x?l.x.label:'(削除された商品)',q:l.q,p:l.g?0:l.price,g:l.g?1:0})),
+    if(old){Object.assign(old,{items:c.ls.map(l=>({s:l.s,n:l.x?l.x.label:'(削除された商品)',q:l.q,p:l.g?0:l.price,g:l.g?1:0,c:l.c?1:0})),
       sub:c.sub,disc:c.disc,cp:c.cp?{id:c.cp.id,name:c.cp.name,code:UI.coupon.code,amt:c.cd}:null,total:c.total,pay,recv:pay==='cash'?(UI.recv==null?c.total:UI.recv):null,memo:false,ed:Date.now()});
       resetCart();UI.lastTx=old.id;UI.view='done';closeSheet();window.scrollTo(0,0);buzz(30);commit('x_'+old.id);return}
     if(isTeam(e)&&!myReg(e.id)){closeSheet();openSheet({type:'reg',val:'',then:'cart'});toast('先にこのスマホのレジ名を決めてください');return}
-    const t=newTx(e,{items:c.ls.map(l=>({s:l.s,n:l.x?l.x.label:'(削除された商品)',q:l.q,p:l.g?0:l.price,g:l.g?1:0})),
+    const t=newTx(e,{items:c.ls.map(l=>({s:l.s,n:l.x?l.x.label:'(削除された商品)',q:l.q,p:l.g?0:l.price,g:l.g?1:0,c:l.c?1:0})),
       sub:c.sub,disc:c.disc,cp:c.cp?{id:c.cp.id,name:c.cp.name,code:UI.coupon.code,amt:c.cd}:null,total:c.total,pay,recv:pay==='cash'?(UI.recv==null?c.total:UI.recv):null});
     resetCart();UI.lastTx=t.id;UI.view='done';closeSheet();window.scrollTo(0,0);buzz(30);commit('x_'+t.id)},
   next(){const a=AR(UI.aid);if(a.memoAlert!==false){openSheet({type:'memo'});return}nextCustomer()},
@@ -1216,7 +1246,7 @@ const ACT={
   memoOff(){const a=AR(UI.aid);a.memoAlert=false;closeSheet();commit('a_'+a.id,{render:false});nextCustomer();toast('メモ確認をオフにしました（アーティスト設定で戻せます）')},
   editTx(d){const t=TX(d.id);if(!t)return;
     if(t.rf&&t.rf.length){toast('返金した会計は直せません');return}
-    UI.editTx=t.id;UI.cart=t.items.map(i=>({s:i.s,q:i.q,g:i.g}));UI.hist=[];UI.disc=t.disc||0;UI.coupon=t.cp?{id:t.cp.id,code:t.cp.code}:null;UI.pay=t.pay==='none'?'cash':t.pay;UI.recv=t.pay==='cash'&&t.recv!==t.total?t.recv:null;
+    UI.editTx=t.id;UI.cart=t.items.map(i=>({s:i.s,q:i.q,g:i.g,c:i.c||0}));UI.hist=[];UI.disc=t.disc||0;UI.coupon=t.cp?{id:t.cp.id,code:t.cp.code}:null;UI.pay=t.pay==='none'?'cash':t.pay;UI.recv=t.pay==='cash'&&t.recv!==t.total?t.recv:null;
     UI.view='event';UI.tab='reg';UI.lastTx=null;UI.sheet=null;window.scrollTo(0,0);saveLocal();render();openSheet({type:'cart'})},
   cancelEdit(){resetCart();saveLocal();closeSheet();render();toast('修正をやめました。元の会計のままです')},
   tileMinus(d){const p=AR(UI.aid).products.find(x=>x.id===d.id);if(!p)return;
@@ -1321,6 +1351,7 @@ function reportText(){
   L.push('',`釣銭準備金 ${yen(e.float||0)}`,`レジにあるべき現金 ${yen((e.float||0)+st.cash)}`);
   if(e.floatDen&&denText(e.floatDen))L.push(`（内訳 ${denText(e.floatDen)}）`);
   if(e.cashCount!=null){const d=e.cashCount-((e.float||0)+st.cash);L.push(`実際の現金 ${yen(e.cashCount)}（${d===0?'差額なし':(d>0?'+':'−')+yen(Math.abs(d))}）`);if(e.countDen&&denText(e.countDen))L.push(`（内訳 ${denText(e.countDen)}）`)}
+  const cs=couponStats(e);if(Object.keys(cs).length){L.push('','―― クーポン別（使用／割引／プレゼント）――');for(const k in cs)L.push(`${k}：${cs[k].n}回／${yen(cs[k].amt)}／${cs[k].gift}個`)}
   const rfs=txOf(e.id).filter(t=>!t.v&&t.rf&&t.rf.length);
   if(rfs.length){L.push('','―― 返金・キャンセル ――');rfs.forEach(t=>t.rf.forEach(r=>L.push(`${noLabel(t)} −${yen(r.amt)}（${PAY[r.pay]||''}）${r.items.map(x=>(t.items[x.i]?t.items[x.i].n:'')+'×'+x.q).join('、')}${r.back?'':' ※在庫に戻さず'}${r.note?' '+r.note:''}`)))}
   const gifts=txOf(e.id).filter(t=>!t.v&&t.items.some(i=>i.g));
