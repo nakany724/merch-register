@@ -209,6 +209,11 @@ table.t{width:100%;border-collapse:collapse;font-size:14px}
 .varminus{height:38px;background:var(--ink);color:var(--paper);font-weight:700;font-size:14px;text-align:center}
 .edit-bar{background:var(--mark);box-shadow:inset 0 0 0 2px var(--ink);padding:10px 14px;display:flex;justify-content:space-between;align-items:center;gap:10px;font-weight:700;font-size:14px;margin-bottom:14px}
 .rf{color:var(--alert);font-weight:700}
+.qrgrid figure .sent{font-size:11px;font-weight:700;margin-top:4px;color:var(--mute)}
+.qrgrid figure.done{opacity:.55}
+.linebtn{display:flex;align-items:center;justify-content:center;width:100%;height:40px;margin-top:8px;background:#06C755;color:#fff;font-weight:900;font-size:13px}
+.fan{min-height:100%;display:flex;flex-direction:column;align-items:center;text-align:center;gap:14px;padding:30px 10px}
+.fan img{width:min(78vw,340px);image-rendering:pixelated;box-shadow:0 0 0 3px var(--ink);padding:10px;background:#fff}
 #scan{position:fixed;inset:0;z-index:90;background:#000;display:flex;flex-direction:column}
 #scan video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 #scan .frame{position:absolute;left:50%;top:44%;width:min(68vw,300px);aspect-ratio:1/1;transform:translate(-50%,-50%);box-shadow:0 0 0 9999px rgba(0,0,0,.55);outline:4px solid var(--mark)}
@@ -373,6 +378,7 @@ async function sync(){
 }
 async function start(){
   render();
+  if(FANQ)return;
   if(!R.api)return;
   try{const st=await Promise.race([call('status'),new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),15000))]);R.hasAdmin=!!st.hasAdmin}
   catch(e){R.offline=true;R.startErr=String(e&&e.message||e)}
@@ -459,6 +465,7 @@ function safeRender(){const a=document.activeElement;if(a&&a.matches&&a.matches(
 document.addEventListener('focusout',()=>{if(pendingRender){pendingRender=false;setTimeout(()=>{const a=document.activeElement;if(!(a&&a.matches&&a.matches('input,textarea')))render();else pendingRender=true},50)}});
 
 function render(){
+  if(FANQ){$('#app').innerHTML=vFan();document.body.classList.remove('dark');if(typeof qrcode!=='function')setTimeout(render,400);return}
   if((UI.view==='artist'||UI.view==='products')&&!AR(UI.aid))UI.view='home';
   if((UI.view==='event'||UI.view==='setup'||UI.view==='done')&&(!EV(UI.eid)||!AR(UI.aid)))UI.view=AR(UI.aid)?'artist':'home';
   let html='';
@@ -566,7 +573,7 @@ function vArtist(){
   </div>
   <div class="sec">
     <div class="sec-h"><h2>クーポン</h2><span class="small">${(a.coupons||[]).length}件</span></div>
-    ${(a.coupons||[]).length?`<div class="list">${a.coupons.map(c=>`<button class="li" data-act="editCoupon" data-id="${c.id}"><div class="grow"><div style="font-weight:700">${esc(c.name)}</div><div class="small">${cpLabel(c)} ・ コード${(c.codes||[]).length}個${c.once?' ・ 1コード1回':''}</div></div>${c.off?'<span class="chip ghost">停止中</span>':'<span class="chip y">使える</span>'}</button>`).join('')}</div>`:'<p class="small">QRコードやコードを見せてもらったら割引する仕組みです。</p>'}
+    ${(a.coupons||[]).length?`<div class="list">${a.coupons.map(c=>`<button class="li" data-act="editCoupon" data-id="${c.id}"><div class="grow"><div style="font-weight:700">${esc(c.name)}</div><div class="small">${cpLabel(c)} ・ コード${(c.codes||[]).length}個${c.once?' ・ 1コード1回':''}${c.sent&&Object.keys(c.sent).length?` ・ 送った${Object.keys(c.sent).filter(k=>(c.codes||[]).includes(k)).length}`:''}</div></div>${c.off?'<span class="chip ghost">停止中</span>':'<span class="chip y">使える</span>'}</button>`).join('')}</div>`:'<p class="small">QRコードやコードを見せてもらったら割引する仕組みです。</p>'}
     <div style="margin-top:14px"><button class="btn out" data-act="newCoupon">＋ クーポンを追加</button></div>
   </div>`;
 }
@@ -893,11 +900,20 @@ const SHEETS={
       ${s.id?`<button class="btn out" data-act="cpQR">QRコードを表示する（配布用）</button>
       ${s.confirmDel?`<p class="red">過去の会計記録のクーポン名は残ります。</p><button class="btn danger" data-act="delCoupon">本当に削除する</button>`:`<button class="btn out" style="color:var(--alert);box-shadow:inset 0 0 0 2px var(--alert)" data-act="askDel">このクーポンを削除</button>`}`:''}
     </div>`},
-  qr(s){const a=AR(UI.aid);const c=findCoupon(a,s.id);if(!c)return '';const codes=(c.codes||[]).slice(0,60);
+  qr(s){const a=AR(UI.aid);const c=findCoupon(a,s.id);if(!c)return '';const all=c.codes||[];const sent=c.sent||{};
     if(typeof qrcode!=='function')return shHead('QRコード')+'<p class="red">QRコードを作る準備ができていません。電波のよい所でページを開き直してください。</p>';
-    return shHead(`${esc(c.name)} のQRコード`,`${cpLabel(c)}${c.once?' ・ 1コード1回':''} ・ スクリーンショットして配ってください`)+`
-    <div class="qrgrid">${codes.map(x=>`<figure><img src="${qrImg(x)}" alt="${esc(x)}のQRコード"><figcaption>${esc(x)}</figcaption></figure>`).join('')}</div>
-    ${(c.codes||[]).length>60?'<p class="hint" style="margin-top:10px">最初の60個だけ表示しています。</p>':''}`},
+    const list=(s.unsentOnly?all.filter(x=>!sent[x]):all).slice(0,60);list.forEach(x=>prepShare(a,c,x));
+    const nUn=all.filter(x=>!sent[x]).length;
+    return shHead(`${esc(c.name)} のQRコード`,`${cpLabel(c)}${c.once?' ・ 1コード1回':''} ・ 送った ${all.length-nUn}／${all.length}`)+`
+    ${all.length>1?`<div class="row wrap" style="gap:8px;margin-bottom:12px"><button class="chip ${s.unsentOnly?'':'on'}" data-act="qrFilter" data-v="0">すべて</button><button class="chip ${s.unsentOnly?'on':''}" data-act="qrFilter" data-v="1">まだ送っていない ${nUn}</button></div>`:''}
+    <div class="qrgrid">${list.map(x=>`<figure class="${sent[x]&&c.once?'done':''}"><img src="${qrImg(x)}" alt="${esc(x)}のQRコード"><figcaption>${esc(x)}</figcaption>
+      ${sent[x]?`<div class="sent">送った：${esc(sent[x].to||'（名前なし）')} ${new Date(sent[x].at).getMonth()+1}/${new Date(sent[x].at).getDate()}</div>`:''}
+      <button class="linebtn" data-act="shareCode" data-code="${esc(x)}">LINEで送る</button></figure>`).join('')}</div>
+    ${list.length===60?'<p class="hint" style="margin-top:10px">60個まで表示しています。</p>':''}
+    <p class="hint" style="margin-top:12px">「LINEで送る」を押すと共有メニューが開きます。LINEを選んで、送る相手を選んでください。${PAGE_BASE?'QRの画像と、QRを表示するリンクが送られます。':'コードの文字が送られます（GitHub版ならQRの画像も送れます）。'}</p>`},
+  sent(s){return shHead('誰に送りましたか？',`コード ${esc(s.code)}`)+`
+    <div class="field"><label for="f-to">送った相手（任意）</label><input class="uin txt" id="f-to" data-bind="sf" data-k="to" autocomplete="off" placeholder="例：〇〇さん"></div>
+    <div class="stack" style="margin-top:20px"><button class="btn" data-act="sentSave">記録する</button><button class="btn out" data-act="sentSkip">送らなかった</button></div>`},
   cpType(s){return shHead('クーポンのコードを入力')+`
     <div class="field"><label for="f-ct">コード</label><input class="uin txt" id="f-ct" data-bind="sf" data-k="code" autocomplete="off" autocapitalize="characters"></div>
     <div style="margin-top:20px"><button class="btn" data-act="cpTypeDo">使う</button></div>`},
@@ -1104,6 +1120,33 @@ async function onQR(file,target){
     else if(target==='edit'&&UI.sheet&&UI.sheet.type==='coupon'){const cur=String(UI.sheet.codes||'').split(/\n+/).map(x=>x.trim()).filter(Boolean);if(!cur.includes(code))cur.push(code);UI.sheet.codes=cur.join('\n');renderLayer();toast('コードを追加しました')}
   }catch(e){toast(e&&e.message==='nolib'?'読み取りの準備ができていません。電波のよい所でページを開き直してください':'写真を読み込めませんでした')}
 }
+const TOPWIN=(()=>{try{return window.top===window.self}catch(e){return false}})();
+const PAGE_BASE=(typeof HAS_GAS!=='undefined'&&!HAS_GAS&&/^https?:$/.test(location.protocol))?location.origin+location.pathname:'';
+const FANQ=(()=>{try{const q=new URLSearchParams(location.search);return PAGE_BASE&&q.get('c')?{c:q.get('c'),n:q.get('n')||'',a:q.get('a')||''}:null}catch(e){return null}})();
+const SHARE={};
+function fanLink(a,c,code){return PAGE_BASE+'?c='+encodeURIComponent(code)+'&n='+encodeURIComponent(c.name)+'&a='+encodeURIComponent(a.name)}
+function shareText(a,c,code){return `【${a.name}】${c.name}\n${cpLabel(c)}\n物販でこのQRコードをスタッフに見せてください。${c.once?'（1回だけ使えます）':''}`+(PAGE_BASE?`\n${fanLink(a,c,code)}`:`\nコード：${code}`)}
+function prepShare(a,c,code){
+  if(SHARE[code]||typeof qrcode!=='function')return;
+  try{const q=qrcode(0,'M');q.addData(code);q.make();const n=q.getModuleCount(),cell=12,m=4,W=(n+m*2)*cell;
+    const cv=document.createElement('canvas');cv.width=W;cv.height=W+150;const x=cv.getContext('2d');
+    x.fillStyle='#fff';x.fillRect(0,0,cv.width,cv.height);x.fillStyle='#0B0B0B';
+    for(let r=0;r<n;r++)for(let k=0;k<n;k++)if(q.isDark(r,k))x.fillRect((k+m)*cell,(r+m)*cell,cell,cell);
+    x.textAlign='center';x.font='900 34px "Noto Sans JP",sans-serif';x.fillText(String(c.name).slice(0,22),W/2,W+52);
+    x.font='700 26px sans-serif';x.fillText(code,W/2,W+100);
+    cv.toBlob(b=>{if(b)SHARE[code]=new File([b],'coupon-'+code+'.png',{type:'image/png'})},'image/png');
+  }catch(e){}
+}
+function vFan(){
+  const f=FANQ;const img=typeof qrcode==='function'?qrImg(f.c):'';
+  return `<div class="fan">${f.a?`<div class="eyebrow">${esc(f.a)}</div>`:''}
+    <h1 class="h1" style="margin:0">${esc(f.n||'クーポン')}</h1>
+    ${img?`<img src="${img}" alt="クーポンのQRコード">`:'<p class="small">QRコードを表示しています…</p>'}
+    <div class="num" style="font-weight:800;font-size:18px">${esc(f.c)}</div>
+    <p style="font-weight:900;font-size:17px">物販スタッフに<span class="mk">この画面</span>を見せてください</p>
+    <p class="small">スクリーンショットしておくと、電波がなくても見せられます。</p></div>`;
+}
+function lineFallback(text,back){const el=document.createElement('a');el.href='https://line.me/R/share?text='+encodeURIComponent(text);el.target='_blank';el.rel='noopener';document.body.appendChild(el);el.click();el.remove();setTimeout(()=>openSheet(back),600)}
 function memoLine(t){return `${noLabel(t)}　${t.items.map(i=>i.n+'×'+i.q+(i.g?'(プレゼント)':'')).join('、')}　${yen(t.total)}　${PAY[t.pay]}`}
 
 /* ===== 画像 ===== */
@@ -1204,6 +1247,16 @@ const ACT={
     Object.assign(c,{pid:s.dtype==='gift'?s.pid:'',vid:s.dtype==='gift'?(s.vid||''):'',qty:s.dtype==='gift'?(s.qty||1):0,name,type:s.dtype,value:s.dtype==='gift'?0:value,codes,once:!!s.once,off:!!s.off});
     closeSheet();commit('a_'+a.id);toast('クーポンを保存しました')},
   delCoupon(){const a=AR(UI.aid);a.coupons=(a.coupons||[]).filter(c=>c.id!==UI.sheet.id);closeSheet();commit('a_'+a.id)},
+  qrFilter(d){UI.sheet.unsentOnly=d.v==='1';UI.sheet.keepScroll=false;renderLayer()},
+  shareCode(d){const a=AR(UI.aid);const c=findCoupon(a,UI.sheet.id);if(!c)return;const code=d.code;const text=shareText(a,c,code);
+    const back={type:'sent',id:c.id,code,to:(c.sent&&c.sent[code]&&c.sent[code].to)||'',unsentOnly:UI.sheet.unsentOnly};
+    const f=SHARE[code];
+    if(TOPWIN&&f&&navigator.canShare&&navigator.canShare({files:[f]})){
+      navigator.share({files:[f],text}).then(()=>openSheet(back),err=>{if(err&&err.name!=='AbortError')lineFallback(text,back)});return}
+    lineFallback(text,back)},
+  sentSave(){const a=AR(UI.aid);const s=UI.sheet;const c=findCoupon(a,s.id);if(!c)return;c.sent=c.sent||{};c.sent[s.code]={to:String(s.to||'').trim(),at:Date.now()};
+    commit('a_'+a.id,{render:false});openSheet({type:'qr',id:c.id,unsentOnly:s.unsentOnly});toast('送ったことを記録しました')},
+  sentSkip(){openSheet({type:'qr',id:UI.sheet.id,unsentOnly:UI.sheet.unsentOnly})},
   cpQR(){const id=UI.sheet.id;openSheet({type:'qr',id})},
   cpType(){openSheet({type:'cpType',code:''})},
   cpTypeDo(){if(applyCoupon(UI.sheet.code)){render();openSheet({type:'cart'})}},
